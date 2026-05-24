@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0056b3">
+  <link rel="manifest" href="manifest.json">
+  <title>Mapa de Trazabilidad de Buques</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      height: 100vh;
+      width: 100vw;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f5f5;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+      color: white;
+      padding: 15px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      z-index: 1000;
+    }
+    .header h1 {
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }
+    .filter-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .filter-container input,
+    .filter-container select {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .filter-container button {
+      grid-column: 1 / -1;
+      padding: 10px;
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .filter-container button:active {
+      background: #218838;
+    }
+    #map {
+      flex: 1;
+      width: 100%;
+    }
+    .info-box {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      z-index: 999;
+      max-width: 250px;
+      font-size: 0.85rem;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      color: white;
+    }
+    .status-en-transito {
+      background: #28a745;
+    }
+    .status-atracado {
+      background: #ffc107;
+    }
+    .status-otros {
+      background: #6c757d;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🚢 Trazabilidad de Buques</h1>
+  <div class="filter-container">
+    <input type="date" id="filterDate" placeholder="Fecha">
+    <input type="text" id="filterShip" placeholder="Nombre del buque">
+    <select id="filterStatus">
+      <option value="">Todos los estados</option>
+      <option value="En Tránsito">En Tránsito</option>
+      <option value="Atracado">Atracado</option>
+      <option value="Otros">Otros</option>
+    </select>
+    <select id="filterPort">
+      <option value="">Todos los puertos</option>
+      <option value="Villeta">Villeta</option>
+      <option value="Rosario">Rosario</option>
+      <option value="Buenos Aires">Buenos Aires</option>
+      <option value="Montevideo">Montevideo</option>
+      <option value="Santos">Santos</option>
+    </select>
+    <button onclick="aplicarFiltros()">🔍 Buscar</button>
+  </div>
+</div>
+
+<div id="map"></div>
+<div class="info-box" id="infoBox" style="display:none;"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  const API_URL = 'http://localhost:3000/api';
+  let map;
+  let marcadores = {};
+  let datosOriginales = [];
+
+  function inicializarMapa() {
+    map = L.map('map', { tap: true }).setView([-30, -58], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+  }
+
+  async function cargarBuques() {
+    try {
+      const response = await fetch(`${API_URL}/buques`);
+      datosOriginales = await response.json();
+      mostrarBuques(datosOriginales);
+    } catch (error) {
+      console.error('Error cargando buques:', error);
+      mostrarBuquesLocales();
+    }
+  }
+
+  function mostrarBuquesLocales() {
+    datosOriginales = [
+      { id: 1, nombre: 'BUQUE 1', latitud: -25.5, longitud: -57.5, estado: 'En Tránsito', puerto: 'Villeta', fecha: new Date().toISOString().split('T')[0] },
+      { id: 2, nombre: 'BUQUE 2', latitud: -32.95, longitud: -60.66, estado: 'Atracado', puerto: 'Rosario', fecha: new Date().toISOString().split('T')[0] },
+      { id: 3, nombre: 'BUQUE 3', latitud: -34.6, longitud: -58.37, estado: 'En Tránsito', puerto: 'Buenos Aires', fecha: new Date().toISOString().split('T')[0] },
+      { id: 4, nombre: 'BUQUE 4', latitud: -34.9, longitud: -56.2, estado: 'Atracado', puerto: 'Montevideo', fecha: new Date().toISOString().split('T')[0] },
+      { id: 5, nombre: 'BUQUE 5', latitud: -23.95, longitud: -46.33, estado: 'En Tránsito', puerto: 'Santos', fecha: new Date().toISOString().split('T')[0] }
+    ];
+    mostrarBuques(datosOriginales);
+  }
+
+  function mostrarBuques(buques) {
+    Object.values(marcadores).forEach(m => map.removeLayer(m));
+    marcadores = {};
+
+    buques.forEach(buque => {
+      const color = buque.estado === 'En Tránsito' ? 'blue' : buque.estado === 'Atracado' ? 'orange' : 'gray';
+      const marker = L.marker([buque.latitud, buque.longitud], {
+        icon: L.icon({
+          iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-${color}.png`,
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+          iconSize: [25, 41],
+          shadowSize: [41, 41],
+          iconAnchor: [12, 41],
+          shadowAnchor: [12, 41]
+        })
+      }).addTo(map).bindPopup(`
+        <b>${buque.nombre}</b><br>
+        Estado: <span class="status-badge status-${buque.estado.toLowerCase().replace(' ', '-')}\">${buque.estado}</span><br>
+        Puerto: ${buque.puerto}<br>
+        Fecha: ${buque.fecha}<br>
+        Lat: ${buque.latitud.toFixed(2)}, Lon: ${buque.longitud.toFixed(2)}
+      `);
+      
+      marker.on('click', () => {
+        document.getElementById('infoBox').innerHTML = `
+          <strong>${buque.nombre}</strong><br>
+          Estado: <span class="status-badge status-${buque.estado.toLowerCase().replace(' ', '-')}\">${buque.estado}</span><br>
+          Puerto: ${buque.puerto}<br>
+          Fecha: ${buque.fecha}<br>
+          Ubicación: ${buque.latitud.toFixed(4)}°, ${buque.longitud.toFixed(4)}°
+        `;
+        document.getElementById('infoBox').style.display = 'block';
+      });
+      
+      marcadores[buque.id] = marker;
+    });
+  }
+
+  function aplicarFiltros() {
+    const fecha = document.getElementById('filterDate').value;
+    const nombre = document.getElementById('filterShip').value.toLowerCase();
+    const estado = document.getElementById('filterStatus').value;
+    const puerto = document.getElementById('filterPort').value;
+
+    let filtrados = datosOriginales.filter(buque => {
+      return (
+        (!fecha || buque.fecha === fecha) &&
+        (!nombre || buque.nombre.toLowerCase().includes(nombre)) &&
+        (!estado || buque.estado === estado) &&
+        (!puerto || buque.puerto === puerto)
+      );
+    });
+
+    mostrarBuques(filtrados);
+  }
+
+  setInterval(cargarBuques, 5000);
+
+  window.addEventListener('load', () => {
+    inicializarMapa();
+    cargarBuques();
+    
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js')
+        .then(reg => console.log('Service Worker registrado'))
+        .catch(err => console.log('Error:', err));
+    }
+  });
+</script>
+
+</body>
+</html>
