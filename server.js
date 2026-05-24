@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 const app = express();
 
 app.use(cors());
@@ -58,6 +60,43 @@ app.delete('/api/buques/:id', (req, res) => {
   res.json({ mensaje: 'Buque eliminado' });
 });
 
+// ENDPOINT: Descargar APK
+app.get('/descargar/apk', (req, res) => {
+  const apkPath = path.join(__dirname, 'apk', 'TrazabilidadBuques.apk');
+  
+  // Si el archivo existe, lo sirve
+  if (fs.existsSync(apkPath)) {
+    res.download(apkPath, 'TrazabilidadBuques.apk');
+  } else {
+    // Si no existe, devuelve info de descarga
+    res.json({
+      estado: 'En construcción',
+      mensaje: 'El APK está siendo compilado. Por favor, intenta más tarde.',
+      descarga_alternativa: 'https://github.com/nanchinyx-cell/trazabilidad-buques/releases'
+    });
+  }
+});
+
+// ENDPOINT: Estado del APK
+app.get('/api/status-apk', (req, res) => {
+  const apkPath = path.join(__dirname, 'apk', 'TrazabilidadBuques.apk');
+  
+  if (fs.existsSync(apkPath)) {
+    const stats = fs.statSync(apkPath);
+    res.json({
+      disponible: true,
+      tamaño: `${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+      fecha_creacion: stats.birthtime,
+      enlace_descarga: '/descargar/apk'
+    });
+  } else {
+    res.json({
+      disponible: false,
+      mensaje: 'APK no disponible aún'
+    });
+  }
+});
+
 // Simular actualizaciones de posición en tiempo real
 setInterval(() => {
   buques.forEach(buque => {
@@ -81,4 +120,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
   console.log(`📊 API disponible en http://localhost:${PORT}/api/buques`);
   console.log(`🗺️ Aplicación en http://localhost:${PORT}`);
+  console.log(`📱 Descargar APK en http://localhost:${PORT}/descargar/apk`);
 });
