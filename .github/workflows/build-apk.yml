@@ -1,0 +1,73 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'zulu'
+        java-version: '11'
+
+    - name: Install Cordova
+      run: npm install -g cordova
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Create Cordova project
+      run: cordova create TrazabilidadApp com.trazabilidad.buques TrazabilidadBuques
+
+    - name: Add Android platform
+      run: cd TrazabilidadApp && cordova platform add android
+
+    - name: Copy files to www
+      run: |
+        cp index.html TrazabilidadApp/www/
+        cp service-worker.js TrazabilidadApp/www/
+        cp manifest.json TrazabilidadApp/www/
+
+    - name: Build APK
+      run: cd TrazabilidadApp && cordova build android --release
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: app-debug
+        path: TrazabilidadApp/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v1.0.0-${{ github.run_number }}
+        release_name: Release v1.0.0-${{ github.run_number }}
+        body: |
+          APK de Trazabilidad de Buques listo para descargar e instalar en Android
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: TrazabilidadApp/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+        asset_name: TrazabilidadBuques.apk
+        asset_content_type: application/vnd.android.package-archive
